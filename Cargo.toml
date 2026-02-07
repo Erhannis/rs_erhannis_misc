@@ -2,6 +2,11 @@
 name = "erhannis_misc"
 version = "0.1.0"
 edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Erhannis's collection of misc utils"
+repository = "https://github.com/Erhannis/rs_erhannis_misc"
+readme = "README.md"
+keywords = ["utilities", "utils", "misc"]
 
 [dependencies]
 crossbeam = { version = "0.8.4", features = ["crossbeam-channel"] }
