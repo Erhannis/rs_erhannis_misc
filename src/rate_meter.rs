@@ -1,6 +1,9 @@
 
 //MISC Ugh, I don't like all the std/nostd back and forth
 
+#[cfg(not(feature = "std"))]
+use core::option::{Option, Option::None, Option::Some};
+
 #[cfg(feature = "std")]
 use std::time::{Instant, Duration};
 
