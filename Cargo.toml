@@ -1,6 +1,6 @@
 [package]
 name = "erhannis_misc"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Erhannis's collection of misc utils"
@@ -8,6 +8,12 @@ repository = "https://github.com/Erhannis/rs_erhannis_misc"
 readme = "README.md"
 keywords = ["utilities", "utils", "misc"]
 
+[features]
+default = ["std"]
+std = ["crossbeam/std", "crossbeam/alloc", "crossbeam-channel/std"]
+
 [dependencies]
-crossbeam = { version = "0.8.4", features = ["crossbeam-channel"] }
+crossbeam = { version = "0.8.4", default-features = false, features = ["crossbeam-channel"] }
+crossbeam-channel = { version = "0.5.15", default-features = false }
+fugit = { version = "0.3.9", features = ["defmt"] }
 log = "0.4.29"
