@@ -94,7 +94,13 @@ impl RateMeter {
     #[cfg(feature = "std")]
     let now = Instant::now();
     
-    let last_time = self.last_time.unwrap_or(now);
+    let last_time = match self.last_time {
+        Some(lt) => lt,
+        None => {
+            self.last_time = Some(now);
+            now
+        },
+    };
 
     if now >= last_time + self.interval {
       #[cfg(feature = "std")]
@@ -128,7 +134,13 @@ impl RateMeter {
     #[cfg(feature = "std")]
     let now = Instant::now();
 
-    let last_time = self.last_time.unwrap_or(now);
+    let last_time = match self.last_time {
+        Some(lt) => lt,
+        None => {
+            self.last_time = Some(now);
+            now
+        },
+    };
 
     #[cfg(feature = "std")]
     let r = (self.count as f64) / (now - last_time).as_secs_f64();
