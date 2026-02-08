@@ -15,11 +15,25 @@ type Duration = fugit::Duration<u64, 1, 1_000_000>;
 
 pub struct RateMeter {
   pub count: u64,
-  pub last_time: Instant,
+  pub last_time: Option<Instant>,
   pub interval: Duration,
 }
 
 impl RateMeter {
+  pub const fn default() -> RateMeter {
+    #[cfg(not(feature = "std"))]
+    let interval = Duration::millis(1000);
+    
+    #[cfg(feature = "std")]
+    let interval = Duration::from_millis(1000);
+
+    return RateMeter {
+      count: 0,
+      last_time: None,
+      interval,
+    };
+  }
+
   pub fn new(
     #[cfg(not(feature = "std"))]
     now: Instant,
@@ -33,11 +47,11 @@ impl RateMeter {
     #[cfg(feature = "std")]
     let interval = Duration::from_millis(1000);
 
-    RateMeter {
+    return RateMeter {
       count: 0,
-      last_time: now,
+      last_time: Some(now),
       interval,
-    }
+    };
   }
 
   /**
@@ -79,21 +93,23 @@ impl RateMeter {
   ) -> Option<f64> {
     #[cfg(feature = "std")]
     let now = Instant::now();
+    
+    let last_time = self.last_time.unwrap_or(now);
 
-    if now >= self.last_time + self.interval {
+    if now >= last_time + self.interval {
       #[cfg(feature = "std")]
-      let r = Some((self.count as f64) / (now - self.last_time).as_secs_f64());
+      let r = Some((self.count as f64) / (now - last_time).as_secs_f64());
 
       #[cfg(not(feature = "std"))]
       let r = {
         //LEAK It would be nice to support nanos without losing precision for large times
-        let us = (now - self.last_time).to_micros();
+        let us = (now - last_time).to_micros();
         let s = (us as f64) / 1_000_000_f64;
         let r = Some((self.count as f64) / s);
         r
       };
 
-      self.last_time = now;
+      self.last_time = Some(now);
       self.count = 0;
       return r;
     } else {
@@ -112,19 +128,21 @@ impl RateMeter {
     #[cfg(feature = "std")]
     let now = Instant::now();
 
+    let last_time = self.last_time.unwrap_or(now);
+
     #[cfg(feature = "std")]
-    let r = (self.count as f64) / (now - self.last_time).as_secs_f64();
+    let r = (self.count as f64) / (now - last_time).as_secs_f64();
 
     #[cfg(not(feature = "std"))]
     let r = {
       //LEAK It would be nice to support nanos without losing precision for large times
-      let us = (now - self.last_time).to_micros();
+      let us = (now - last_time).to_micros();
       let s = (us as f64) / 1_000_000_f64;
       let r = (self.count as f64) / s;
       r
     };
 
-    self.last_time = now;
+    self.last_time = Some(now);
     self.count = 0;
     return r;
   }
