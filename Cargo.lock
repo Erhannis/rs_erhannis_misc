@@ -161,7 +161,6 @@ version = "0.1.5"
 dependencies = [
  "crossbeam",
  "crossbeam-channel",
- "defmt 1.0.1",
  "fugit",
  "heapless",
  "log",

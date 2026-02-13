@@ -1,8 +1,7 @@
 // de/encode messages to length-prefixed checksummed byte streams.
 
-use defmt::{debug, error};
-use heapless::{Deque, Vec};
-use log::trace;
+use heapless::{CapacityError, Vec};
+use log::{error, trace};
 use sha2::{Digest, Sha256};
 
 use crate::utils::to_hex_string;
@@ -51,6 +50,42 @@ impl <const LEN_PREFIX_BYTES: usize, const CHECKSUM_BYTES: usize, STATE> Encoder
       tx: tx,
       after_tx: after_tx,
     };
+  }
+
+  /**
+   * Wrap `msg` in length prefix and checksums (and whatever other processing is added in the future)
+   * and write it to `out`, skipping all the callbacks and such that the full Encoder has.
+   * Note that if not `out.len() == calcMsgSize(LEN_PREFIX_BYTES, CHECKSUM_BYTES, msg.len())`,
+   * we return Err(()).
+   */ //CHECK Maybe Vec out, not [u8]?
+  pub fn write_plain(msg: &[u8], out: &mut [u8]) -> Result<(), ()> { //THINK Should probably have proper ok/err types
+    // Makes a new Encoder internally to write bytes into `out`
+    //RAINY Mmmmaaaybe generic consts, so I can precalc the output size?  Actually, msg.len() maybe not const huh
+    let size_out = calcMsgSize(LEN_PREFIX_BYTES, CHECKSUM_BYTES, msg.len());
+    if size_out != out.len() {
+      return Err(());
+    }
+    let mut enc: Encoder<LEN_PREFIX_BYTES, CHECKSUM_BYTES, (usize, &mut [u8])> = Encoder {
+      state: (0, out),
+      before_tx: None,
+      tx: |state, buffers| {
+        //THINK We might just be able to send each individually, in this case
+        let mut offset = state.0;
+        for b in buffers {
+            let len = b.len();
+            //THINK I *believe* this should be guaranteed not to happen, if the other code is correct?
+            // if offset + len > MSG_SIZE {
+            //   error!("DBG ERR MSG TOO BIG");
+            // }
+            state.1[offset..offset + len].copy_from_slice(b);
+            offset += len;
+        }
+        state.0 = offset;
+        return Ok(TransmissionStatus::Complete);
+      },
+      after_tx: None,
+    };
+    return enc.write(msg);
   }
 }
 
@@ -109,7 +144,7 @@ impl <const LEN_PREFIX_BYTES: usize, const CHECKSUM_BYTES: usize, STATE> Encoder
       &msg_checksum,
     ]) {
         Ok(TransmissionStatus::Complete) => (),
-        Ok(TransmissionStatus::Partial(n)) => error!("partial tx not yet handled"),
+        Ok(TransmissionStatus::Partial(_n)) => error!("partial tx not yet handled"),
         Err(_) => error!("tx error, not handled"),
     };
     match &mut self.after_tx {
@@ -142,6 +177,90 @@ impl <const LEN_PREFIX_BYTES: usize, const CHECKSUM_BYTES: usize, STATE, const B
       after_rx: after_rx,
     };
   }
+
+  /// STATE is input not yet processed
+  /**
+   * Returns a Decoder that you can .add() data to.
+   * //RAINY Currently you have to manually specify the state for Decoder, sorry.  Depending on the side you're specifying it on, either Vec<u8, BUF_SIZE>, or about anything at all, will do.
+   */
+  pub fn new_plain() -> Decoder<LEN_PREFIX_BYTES, CHECKSUM_BYTES, Vec<u8, BUF_SIZE>, BUF_SIZE> {
+    let d = Decoder {
+      state: Vec::<u8, BUF_SIZE>::new(),
+      incoming_message: Vec::new(),
+      before_rx: None,
+      // Note: Decoder calls rx repeatedly with a buffer of the size it wants.
+      rx: |state, buffer| -> Result<TransmissionStatus, nb::Error<()>> { // Rx
+          if state.len() < buffer.len() {
+            // We have less data than we want
+            let n = state.len();
+            if n == 0 {
+              return Err(nb::Error::WouldBlock);
+            }
+            buffer[0..n].copy_from_slice(state);
+            state.clear();
+            return Ok(TransmissionStatus::Partial(n));
+          } else if state.len() > buffer.len() {
+            // We have more data than we want
+            let n = buffer.len();
+            buffer.copy_from_slice(state);
+            state.drain(0..n); //LEAK I wonder if there's a more efficient way?
+            return Ok(TransmissionStatus::Complete);
+          } else {
+            // We have exactly as much data as we want
+            let n = state.len();
+            buffer[0..n].copy_from_slice(state);
+            state.clear();
+            return Ok(TransmissionStatus::Complete);
+          }
+        },
+      after_rx: None,
+    };
+    return d;
+  }
+}
+
+impl <const LEN_PREFIX_BYTES: usize, const CHECKSUM_BYTES: usize, const BUF_SIZE: usize> Decoder<LEN_PREFIX_BYTES, CHECKSUM_BYTES, Vec<u8,BUF_SIZE>, BUF_SIZE> {
+  /**
+   * Copies `input` onto the pending buffer in `state`.  Returns error if out of space.
+   */
+  pub fn add(&mut self, input: &[u8]) -> Result<(), CapacityError> {
+    return self.state.extend_from_slice(input);
+  }
+
+  // /**
+  //  * Calls `add` and then `read`.
+  //  */
+  // pub fn read_plain<'a, const CAPACITY: usize>(&mut self, input: &[u8], msg: &'a mut Vec<u8, CAPACITY>) -> Result<Option<&'a Vec<u8, CAPACITY>>, nb::Error<()>> {
+  //   // Having trouble with having two error types
+  //   match self.add(input) {
+  //     Ok(()) => (),
+  //     Err(e) => return Err(nb::Error::Other(e)),
+  //   }
+  //   match self.read(msg) {
+  //     Ok(()) => {
+  //       return Ok(Some(msg));
+  //     },
+  //     Err(e) => return Err(e),
+  //   }
+  //   // return Ok(Some(msg));
+  // }
+
+  /**
+   * Removes current input from buffer (clearing the buffer) and returns it.
+   */
+  pub fn recover_input(&mut self) -> Vec<u8,BUF_SIZE> {
+    return core::mem::replace(&mut self.state, Vec::new());
+  }
+
+  //RAINY Should this be on the trait?
+  //RAINY Should we provide a way to reset STATE?
+  /**
+   * Clears `incoming_message`, resetting the built-in internal state of Decoder.
+   * Notably, does not reset the STATE field, which the built-in code knows nothing about.
+   */
+  pub fn clear(&mut self) {
+    self.incoming_message.clear();
+  }
 }
 
 impl <const LEN_PREFIX_BYTES: usize, const CHECKSUM_BYTES: usize, STATE, const BUF_SIZE: usize> DecoderT for Decoder<LEN_PREFIX_BYTES, CHECKSUM_BYTES, STATE, BUF_SIZE> {
@@ -158,6 +277,7 @@ impl <const LEN_PREFIX_BYTES: usize, const CHECKSUM_BYTES: usize, STATE, const B
     /*
     So, this goes through the steps and compares against how much data we already have, to figure out where in the process we are,
     and resume from there, returning Err(WouldBlock) when would block.
+    //LEAK I imagine this wastes time?  Can we keep state better?
      */
 
     // Looping so I can restart on validation failure
@@ -185,7 +305,7 @@ impl <const LEN_PREFIX_BYTES: usize, const CHECKSUM_BYTES: usize, STATE, const B
         // Found magic byte
       }
 
-      let mut load_bytes = |mut incoming_message: &mut Vec<u8, BUF_SIZE>, mut buf: &mut [u8]| -> Result<_, nb::Error<()>> { //THINK Might be clearer to do `count` instead of buf; not really necessary I think.  Can we do const params?
+      let mut load_bytes = |incoming_message: &mut Vec<u8, BUF_SIZE>, mut buf: &mut [u8]| -> Result<_, nb::Error<()>> { //THINK Might be clearer to do `count` instead of buf; not really necessary I think.  Can we do const params?
         match (self.rx)(&mut self.state, &mut buf) {
           Ok(TransmissionStatus::Complete) => {
             for &mut b in buf {
@@ -250,7 +370,7 @@ impl <const LEN_PREFIX_BYTES: usize, const CHECKSUM_BYTES: usize, STATE, const B
           // Pass through
         },
         Err(_) => {
-          error!("den.read: Incoming message too big(?) {} > {}, dropped", len, CAPACITY); //DUMMY //NEXT I think this encountered an example of like, the magic byte was in the message, and it got off track, and failed to recover, always parsing the msg wrong
+          error!("den.read: Incoming message too big(?) {} > {}, dropped", len, CAPACITY); //DUMMY I think this encountered an example of like, the magic byte was in the message, and it got off track, and failed to recover, always parsing the msg wrong
           self.incoming_message.clear();
           continue 'readloop;
         },
