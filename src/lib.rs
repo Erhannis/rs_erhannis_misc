@@ -1,5 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+pub mod averager;
 pub mod rate_meter;
 pub mod utils;
 pub mod dencoder;

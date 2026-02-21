@@ -202,8 +202,8 @@ impl <const LEN_PREFIX_BYTES: usize, const CHECKSUM_BYTES: usize, STATE, const B
           } else if state.len() > buffer.len() {
             // We have more data than we want
             let n = buffer.len();
-            buffer.copy_from_slice(state);
-            state.drain(0..n); //LEAK I wonder if there's a more efficient way?
+            buffer.copy_from_slice(&state[0..n]);
+            state.drain(0..n); //LEAK I wonder if there's a more efficient way?  Could I drain and pass those to buffer above?
             return Ok(TransmissionStatus::Complete);
           } else {
             // We have exactly as much data as we want

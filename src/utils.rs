@@ -10,8 +10,8 @@ pub fn convert_to_lossy_utf8(input: &mut [u8]) {
   }
 }
 
-pub fn to_hex_string(data: &[u8]) -> String<1024> {
-  let mut hex_string = String::<1024>::new(); // Create a heapless String with a max capacity of 64
+pub fn to_hex_string(data: &[u8]) -> String<2048> {
+  let mut hex_string = String::<2048>::new(); // Create a heapless String with a max capacity of 64
   for byte in data {
     // Write the hex representation of each byte
     write!(&mut hex_string, "{:02x}", byte).unwrap();

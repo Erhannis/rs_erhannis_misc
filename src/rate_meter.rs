@@ -17,6 +17,7 @@ pub struct RateMeter {
   pub count: u64,
   pub last_time: Option<Instant>,
   pub interval: Duration,
+  pub last_rate: Option<f64>,
 }
 
 impl RateMeter {
@@ -31,6 +32,7 @@ impl RateMeter {
       count: 0,
       last_time: None,
       interval,
+      last_rate: None,
     };
   }
 
@@ -51,6 +53,7 @@ impl RateMeter {
       count: 0,
       last_time: Some(now),
       interval,
+      last_rate: None,
     };
   }
 
@@ -81,6 +84,26 @@ impl RateMeter {
       #[cfg(not(feature = "std"))]
       now,
     );
+  }
+
+  /**
+   * Adds 1 to the count.  Checks time interval.  If elapsed, reset and return count since last reset.
+   */
+  pub fn auto_count(
+    &mut self,
+    #[cfg(not(feature = "std"))]
+    now: Instant,
+  ) -> Option<u64> {
+    self.inc();
+    let count = self.count;
+    let rate = self.check(
+      #[cfg(not(feature = "std"))]
+      now,
+    );
+    match rate {
+        Some(_) => Some(count),
+        None => None,
+    }
   }
 
   /**
@@ -117,6 +140,7 @@ impl RateMeter {
 
       self.last_time = Some(now);
       self.count = 0;
+      self.last_rate = r;
       return r;
     } else {
       return None;
