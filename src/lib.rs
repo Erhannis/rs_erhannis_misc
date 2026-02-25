@@ -11,3 +11,5 @@ pub mod autotimer;
 pub mod autodrop_thread;
 #[cfg(feature = "std")]
 pub mod unbounded_broadcast;
+#[cfg(feature = "std")]
+pub mod rolling_stats;

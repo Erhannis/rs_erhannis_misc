@@ -1,7 +1,7 @@
 // de/encode messages to length-prefixed checksummed byte streams.
 
 use heapless::{CapacityError, Vec};
-use log::{error, trace};
+use log::{debug, error, trace};
 use sha2::{Digest, Sha256};
 
 use crate::utils::to_hex_string;
